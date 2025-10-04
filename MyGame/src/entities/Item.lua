@@ -11,15 +11,22 @@ function Item:new(itemType, floorLevel)
         lifesteal = 0,
         attackSpeed = 0,
         expBonus = 0,
+        critChance = 0,
+        fireResist = 0,
+        moveSpeed = 0,
+        manaRegen = 0,
+        cooldownReduction = 0,
         affixes = {},
-        icon = self:getIcon(itemType)
+        icon = self:getIcon(itemType),
+        iconType = itemType
     }
     
     setmetatable(o, self)
     self.__index = self
     
     o:generateBaseStats()
-    o.name = o.rarity .. " " .. itemType
+    o:generateAffixes()
+    o.name = o.rarity .. " " .. itemType:gsub("^%l", string.upper)
     
     return o
 end
@@ -63,14 +70,14 @@ end
 
 function Item:generateBaseStats()
     local rarityMultiplier = 1
-    if self.rarity == "Uncommon" then rarityMultiplier = 2
-    elseif self.rarity == "Rare" then rarityMultiplier = 3
-    elseif self.rarity == "Epic" then rarityMultiplier = 4
-    elseif self.rarity == "Legendary" then rarityMultiplier = 5 end
+    if self.rarity == "Uncommon" then rarityMultiplier = 1.5
+    elseif self.rarity == "Rare" then rarityMultiplier = 2
+    elseif self.rarity == "Epic" then rarityMultiplier = 3
+    elseif self.rarity == "Legendary" then rarityMultiplier = 4 end
     
     if self.type == "weapon" then
         self.attackBonus = math.random(3, 8) * rarityMultiplier
-        self.attackSpeed = 0.1 * rarityMultiplier
+        self.attackSpeed = 0.1 * (rarityMultiplier - 1)
     elseif self.type == "armor" then
         self.defenseBonus = math.random(2, 5) * rarityMultiplier
         self.hpBonus = math.random(10, 25) * rarityMultiplier
@@ -78,6 +85,47 @@ function Item:generateBaseStats()
         self.defenseBonus = math.random(1, 3) * rarityMultiplier
         self.hpBonus = math.random(5, 15) * rarityMultiplier
     end
+end
+
+function Item:generateAffixes()
+    local affixCount = Affixes:getAffixCountByRarity(self.rarity)
+    self.affixes = Affixes:getRandomAffixes(self.type, affixCount)
+    
+    -- Apply affix bonuses
+    for _, affix in ipairs(self.affixes) do
+        if affix.type == "percent" then
+            if affix.stat == "attack" then
+                self.attackBonus = self.attackBonus + (self.attackBonus * affix.value)
+            elseif affix.stat == "hp" then
+                self.hpBonus = self.hpBonus + (self.hpBonus * affix.value)
+            elseif affix.stat == "defense" then
+                self.defenseBonus = self.defenseBonus + (self.defenseBonus * affix.value)
+            elseif affix.stat == "lifesteal" then
+                self.lifesteal = self.lifesteal + affix.value
+            elseif affix.stat == "attackSpeed" then
+                self.attackSpeed = self.attackSpeed + affix.value
+            elseif affix.stat == "expBonus" then
+                self.expBonus = self.expBonus + affix.value
+            elseif affix.stat == "critChance" then
+                self.critChance = self.critChance + affix.value
+            elseif affix.stat == "fireResist" then
+                self.fireResist = self.fireResist + affix.value
+            elseif affix.stat == "moveSpeed" then
+                self.moveSpeed = self.moveSpeed + affix.value
+            elseif affix.stat == "cooldownReduction" then
+                self.cooldownReduction = self.cooldownReduction + affix.value
+            end
+        elseif affix.type == "flat" then
+            if affix.stat == "manaRegen" then
+                self.manaRegen = self.manaRegen + affix.value
+            end
+        end
+    end
+    
+    -- Round values for display
+    self.attackBonus = math.floor(self.attackBonus)
+    self.defenseBonus = math.floor(self.defenseBonus)
+    self.hpBonus = math.floor(self.hpBonus)
 end
 
 function Item:getIcon(itemType)
@@ -94,4 +142,14 @@ function Item:getColor()
     elseif self.rarity == "Epic" then return {0.5, 0, 0.5}
     elseif self.rarity == "Legendary" then return {1, 0.65, 0}
     else return {1, 1, 1} end
+end
+
+function Item:getAffixDescription()
+    local descriptions = {}
+    for _, affix in ipairs(self.affixes) do
+        local valueText = affix.type == "percent" and string.format("%.1f%%", affix.value * 100) or tostring(affix.value)
+        local description = affix.name:gsub("%%", valueText)
+        table.insert(descriptions, description)
+    end
+    return descriptions
 end

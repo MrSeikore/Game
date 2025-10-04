@@ -22,11 +22,22 @@ function GameScene:onEnter()
     self.gameState = "playing"
 end
 
+function GameScene:onExit()
+end
+
 function GameScene:update(dt)
     local player = GameState.player
     
+    love.graphics.setColor(0.4, 0.4, 1)
+    love.graphics.rectangle("fill", 0, 0, 700, Display.baseHeight)
+
     if self.gameState == "playing" then
         player:moveRight(dt)
+
+        -- Limit player to left area
+        if player.x > 650 then
+            player.x = 650
+        end
 
         if not self.currentMonster and player.x > 400 then
             self.currentMonster = Monster:new(self.currentFloor)
@@ -35,6 +46,11 @@ function GameScene:update(dt)
 
     elseif self.gameState == "battle" then
         if self.currentMonster then
+            -- Limit monster to left area
+            if self.currentMonster.x > 650 then
+                self.currentMonster.x = 650
+            end
+            
             self.currentMonster:moveTowardsPlayer(player.x, dt)
             
             local distance = math.abs(player.x - self.currentMonster.x)
@@ -56,13 +72,19 @@ function GameScene:update(dt)
                         self.currentFloor = self.currentFloor + 1
                         self.killedMonsters = 0
                         player.hp = player.maxHp
+                        print("Advanced to floor " .. self.currentFloor)
                     end
 
+                    -- Item drop with affixes
                     if math.random() < 0.6 then
                         local itemTypes = {"weapon", "helmet", "armor"}
                         local itemType = itemTypes[math.random(1, 3)]
                         local newItem = Item:new(itemType, self.currentFloor)
                         player:addToInventory(newItem)
+                        print("Dropped: " .. newItem.name)
+                        if #newItem.affixes > 0 then
+                            print("Affixes: " .. #newItem.affixes)
+                        end
                     end
 
                     player:resetPosition()
@@ -80,15 +102,15 @@ end
 function GameScene:draw()
     local player = GameState.player
     
-    -- Background
+    -- Background (left area only)
     love.graphics.setColor(0.4, 0.4, 1)
-    love.graphics.rectangle("fill", 0, 0, 1000, 700)
+    love.graphics.rectangle("fill", 0, 0, 700, 700)
     
-    -- Ground
+    -- Ground (left area only)
     love.graphics.setColor(0.4, 0.3, 0.2)
-    love.graphics.rectangle("fill", 0, self.groundY, 1000, 150)
+    love.graphics.rectangle("fill", 0, self.groundY, 700, 150)
     love.graphics.setColor(0, 0.6, 0)
-    love.graphics.rectangle("fill", 0, self.groundY, 1000, 10)
+    love.graphics.rectangle("fill", 0, self.groundY, 700, 10)
     
     -- Monster
     if self.currentMonster then
@@ -98,7 +120,7 @@ function GameScene:draw()
     -- Player
     player:draw()
     
-    -- UI
+    -- UI (left side, away from inventory)
     love.graphics.setColor(1, 1, 1)
     love.graphics.print("HP: " .. player.hp .. "/" .. player.maxHp, 10, 10)
     love.graphics.print("ATK: " .. player.attack, 10, 30)
@@ -107,35 +129,32 @@ function GameScene:draw()
     love.graphics.print("EXP: " .. player.exp .. "/" .. player.expToNextLevel, 10, 90)
     love.graphics.print("Floor: " .. self.currentFloor, 10, 110)
     love.graphics.print("Killed: " .. self.killedMonsters .. "/3", 10, 130)
-    love.graphics.print("I - Inventory", 10, 150)
     
     -- Game state
     if self.gameState == "battle" then
         love.graphics.setColor(1, 0, 0)
-        love.graphics.print("BATTLE!", 800, 20)
+        love.graphics.print("BATTLE!", 600, 20)
     else
         love.graphics.setColor(0, 1, 0)
-        love.graphics.print("MOVING", 800, 20)
+        love.graphics.print("MOVING", 600, 20)
     end
     
     -- Game over screen
     if self.gameState == "gameOver" then
         love.graphics.setColor(0, 0, 0, 0.7)
-        love.graphics.rectangle("fill", 200, 200, 600, 200)
+        love.graphics.rectangle("fill", 150, 200, 400, 200)
         
         love.graphics.setColor(1, 0, 0)
-        love.graphics.print("GAME OVER", 450, 230)
+        love.graphics.print("GAME OVER", 280, 230)
         
         love.graphics.setColor(1, 1, 1)
-        love.graphics.print("Press R to respawn on previous floor", 350, 280)
-        love.graphics.print("You will keep your inventory", 380, 310)
+        love.graphics.print("Press R to respawn", 250, 280)
+        love.graphics.print("You keep your inventory", 230, 310)
     end
 end
 
 function GameScene:keypressed(key)
-    if key == "i" then
-        GameState:switchScene('inventory')
-    elseif key == "r" and self.gameState == "gameOver" then
+    if key == "r" and self.gameState == "gameOver" then
         -- Respawn logic
         GameState.player.hp = GameState.player.maxHp
         self.currentFloor = math.max(1, self.currentFloor - 1)
@@ -146,9 +165,9 @@ function GameScene:keypressed(key)
 end
 
 function GameScene:mousepressed(x, y, button)
-    -- Game scene mouse handling if needed
+    -- Game scene mouse handling
 end
 
 function GameScene:mousemoved(x, y, dx, dy)
-    -- Game scene mouse movement handling
+    -- Game scene mouse movement
 end

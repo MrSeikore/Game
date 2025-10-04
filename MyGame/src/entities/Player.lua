@@ -7,6 +7,8 @@ function Player:new()
         baseHp = 100, baseAttack = 10, baseDefense = 5,
         maxHp = 100, hp = 100, attack = 10, defense = 5,
         lifesteal = 0, attackSpeed = 1.0, expBonus = 0,
+        critChance = 0, fireResist = 0, moveSpeed = 0,
+        manaRegen = 0, cooldownReduction = 0,
         lastAttackTime = 0, facingRight = true,
         equipment = {weapon = nil, helmet = nil, armor = nil},
         inventory = {},
@@ -17,55 +19,9 @@ function Player:new()
     return o
 end
 
--- Add this method to properly add items to inventory
-function Player:addToInventory(item)
-    table.insert(self.inventory, item)
-    print("Added to inventory: " .. item.name)
-end
-
--- Update equipItem method to remove from inventory
-function Player:equipItem(item)
-    print("Equipping item:", item.name)
-    
-    -- Remove from inventory if it exists there
-    for i = #self.inventory, 1, -1 do
-        if self.inventory[i] == item then
-            table.remove(self.inventory, i)
-            break
-        end
-    end
-    
-    -- Handle previous equipment
-    local oldItem = self.equipment[item.type]
-    if oldItem then
-        -- Return old item to inventory
-        table.insert(self.inventory, oldItem)
-        print("Returned to inventory: " .. oldItem.name)
-    end
-    
-    -- Equip new item
-    self.equipment[item.type] = item
-    self:recalculateStats()
-    
-    print("Equipped: " .. item.name)
-    return oldItem
-end
-
--- Update unequipItem method
-function Player:unequipItem(itemType)
-    local item = self.equipment[itemType]
-    if item then
-        print("Unequipping:", item.name)
-        self.equipment[itemType] = nil
-        -- Add to inventory
-        table.insert(self.inventory, item)
-        self:recalculateStats()
-    end
-    return item
-end
-
 function Player:moveRight(dt)
-    self.x = self.x + 100 * dt
+    local speed = 100 * (1 + self.moveSpeed)
+    self.x = self.x + speed * dt
     self.facingRight = true
 end
 
@@ -75,7 +31,12 @@ end
 
 function Player:attackMonster(monster, currentTime)
     if self:canAttack(currentTime) then
-        local damage = math.max(1, self.attack - math.floor(monster.defense / 2))
+        local baseDamage = math.max(1, self.attack - math.floor(monster.defense / 2))
+        
+        -- Critical hit chance
+        local isCritical = math.random() < self.critChance
+        local damage = isCritical and math.floor(baseDamage * 1.5) or baseDamage
+        
         monster.hp = monster.hp - damage
         self.lastAttackTime = currentTime
         
@@ -85,9 +46,9 @@ function Player:attackMonster(monster, currentTime)
             self.hp = math.min(self.maxHp, self.hp + healAmount)
         end
         
-        return damage
+        return damage, isCritical
     end
-    return 0
+    return 0, false
 end
 
 function Player:addExp(amount)
@@ -120,6 +81,11 @@ function Player:recalculateStats()
     self.lifesteal = 0
     self.attackSpeed = 1.0
     self.expBonus = 0
+    self.critChance = 0
+    self.fireResist = 0
+    self.moveSpeed = 0
+    self.manaRegen = 0
+    self.cooldownReduction = 0
     
     -- Add equipment bonuses
     for slot, item in pairs(self.equipment) do
@@ -130,6 +96,11 @@ function Player:recalculateStats()
             self.lifesteal = self.lifesteal + (item.lifesteal or 0)
             self.attackSpeed = self.attackSpeed + (item.attackSpeed or 0)
             self.expBonus = self.expBonus + (item.expBonus or 0)
+            self.critChance = self.critChance + (item.critChance or 0)
+            self.fireResist = self.fireResist + (item.fireResist or 0)
+            self.moveSpeed = self.moveSpeed + (item.moveSpeed or 0)
+            self.manaRegen = self.manaRegen + (item.manaRegen or 0)
+            self.cooldownReduction = self.cooldownReduction + (item.cooldownReduction or 0)
         end
     end
     
@@ -137,35 +108,55 @@ function Player:recalculateStats()
     self.attack = math.max(1, self.attack)
     self.defense = math.max(0, self.defense)
     self.maxHp = math.max(1, self.maxHp)
+    self.attackSpeed = math.max(0.1, self.attackSpeed)
     
     if self.hp > self.maxHp then
         self.hp = self.maxHp
     end
-    
-    print(string.format("Stats updated - HP: %d, ATK: %d, DEF: %d", self.maxHp, self.attack, self.defense))
 end
 
 function Player:equipItem(item)
     print("Equipping item:", item.name)
     
-    -- Add to inventory if not already there
-    if not self:hasItem(item) then
-        table.insert(self.inventory, item)
-        print("Added to inventory")
+    -- Remove from inventory
+    for i = #self.inventory, 1, -1 do
+        if self.inventory[i] == item then
+            table.remove(self.inventory, i)
+            break
+        end
     end
     
-    -- Equip the item
+    -- Handle previous equipment
     local oldItem = self.equipment[item.type]
+    if oldItem then
+        -- Return old item to inventory
+        table.insert(self.inventory, oldItem)
+        print("Returned to inventory: " .. oldItem.name)
+    end
+    
+    -- Equip new item
     self.equipment[item.type] = item
     self:recalculateStats()
     
-    if oldItem then
-        print("Replaced:", oldItem.name)
-    else
-        print("Equipped:", item.name)
-    end
-    
+    print("Equipped: " .. item.name)
     return oldItem
+end
+
+function Player:unequipItem(itemType)
+    local item = self.equipment[itemType]
+    if item then
+        print("Unequipping:", item.name)
+        self.equipment[itemType] = nil
+        -- Add to inventory
+        table.insert(self.inventory, item)
+        self:recalculateStats()
+    end
+    return item
+end
+
+function Player:addToInventory(item)
+    table.insert(self.inventory, item)
+    print("Added to inventory: " .. item.name)
 end
 
 function Player:hasItem(item)
@@ -177,16 +168,7 @@ function Player:hasItem(item)
     return false
 end
 
-function Player:unequipItem(itemType)
-    local item = self.equipment[itemType]
-    if item then
-        print("Unequipping:", item.name)
-        self.equipment[itemType] = nil
-        self:recalculateStats()
-    end
-    return item
-end
-
+-- Keep existing draw, resetPosition methods...
 function Player:draw()
     -- Player body
     love.graphics.setColor(self.color)

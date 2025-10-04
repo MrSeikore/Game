@@ -7,7 +7,10 @@ GameState = {
 function GameState:initialize()
     print("Initializing GameState...")
     
-    -- Create player first
+    -- Load data first
+    require('src/data/Affixes')
+    
+    -- Create player
     self.player = Player:new()
     
     -- Initialize scenes
@@ -17,59 +20,71 @@ function GameState:initialize()
     }
     
     -- Start with game scene
-    self:switchScene('game')
+    self.currentScene = self.scenes.game
+    if self.currentScene.onEnter then
+        self.currentScene:onEnter()
+    end
     
     print("GameState initialized")
 end
 
-function GameState:switchScene(sceneName)
-    if self.currentScene then
-        self.currentScene:onExit()
-    end
-    
-    self.currentScene = self.scenes[sceneName]
-    
-    if self.currentScene then
-        self.currentScene:onEnter()
-        print("Switched to scene: " .. sceneName)
-    end
-end
-
 function GameState:update(dt)
-    if self.currentScene then
-        self.currentScene:update(dt)
+    -- Always update game scene
+    if self.scenes.game then
+        self.scenes.game:update(dt)
+    end
+    
+    -- Always update inventory (it's always visible now)
+    if self.scenes.inventory then
+        self.scenes.inventory:update(dt)
     end
 end
 
 function GameState:draw()
-    if self.currentScene then
-        self.currentScene:draw()
+    -- Always draw game scene first
+    if self.scenes.game then
+        self.scenes.game:draw()
+    end
+    
+    -- Always draw inventory on top
+    if self.scenes.inventory then
+        self.scenes.inventory:draw()
     end
 end
 
 function GameState:keypressed(key)
+    -- Pass to current scene
     if self.currentScene then
         self.currentScene:keypressed(key)
     end
 end
 
 function GameState:mousepressed(x, y, button)
-    if self.currentScene then
-        self.currentScene:mousepressed(x, y, button)
+    -- Check if click is in inventory area (right 300px)
+    if x >= 700 and self.scenes.inventory then
+        self.scenes.inventory:mousepressed(x, y, button)
+    else
+        -- Pass to game scene
+        if self.scenes.game then
+            self.scenes.game:mousepressed(x, y, button)
+        end
     end
 end
 
 function GameState:mousemoved(x, y, dx, dy)
-    if self.currentScene then
-        self.currentScene:mousemoved(x, y, dx, dy)
+    -- Update both scenes
+    if self.scenes.game then
+        self.scenes.game:mousemoved(x, y, dx, dy)
+    end
+    if self.scenes.inventory then
+        self.scenes.inventory:mousemoved(x, y, dx, dy)
     end
 end
 
--- Save/load system
 function GameState:saveProgress()
-    -- Implementation for saving game progress
+    -- Save game progress
 end
 
 function GameState:loadProgress()
-    -- Implementation for loading game progress
+    -- Load game progress
 end
