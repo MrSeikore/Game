@@ -79,7 +79,7 @@ function love.load()
     -- Автоматическое подключение к серверу
     print("Searching for game server...")
     local connected = false
-    local servers = Config:discoverServer()
+    local servers = Config:getServerList()
 
     for i, serverUrl in ipairs(servers) do
         print("Trying: " .. serverUrl)
