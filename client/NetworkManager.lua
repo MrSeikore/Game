@@ -1,4 +1,4 @@
-local json = require("json")
+local json = require("dkjson")
 
 NetworkManager = {
     connected = false,
@@ -8,7 +8,9 @@ NetworkManager = {
     lastError = "",
     playerName = nil,
     waitingForNameInput = true,
-    nameInputText = ""
+    nameInputText = "",
+    receiveBuffer = "",
+    frameState = nil -- Состояние для постепенного чтения фрейма
 }
 
 function NetworkManager:initialize()
@@ -112,109 +114,115 @@ function NetworkManager:update(dt)
 end
 
 function NetworkManager:receive()
-    if not self.connected or not self.socket then 
-        print("❌ Cannot receive - not connected or no socket")
-        return nil 
-    end
-    
-    -- Вместо getreceive используем прямое чтение с таймаутом
-    -- Сохраняем текущий таймаут
-    local original_timeout = self.socket:gettimeout()
-    
-    -- Устанавливаем очень короткий таймаут для проверки
-    self.socket:settimeout(0.001) -- 1ms timeout
-    
-    local data, err, partial = self.socket:receive(1) -- Пробуем прочитать 1 байт
-    
-    -- Восстанавливаем оригинальный таймаут
-    self.socket:settimeout(original_timeout)
-    
-    if not data and err == "timeout" then
-        -- Нет данных для чтения
-        -- print("⏳ No data available to receive")
+    if not self.connected or not self.socket then
         return nil
+    end
+
+    -- Устанавливаем неблокирующий режим
+    self.socket:settimeout(0)
+
+    -- Читаем доступные данные в буфер (максимум 4096 байт за раз)
+    local chunk, err, partial = self.socket:receive(4096)
+    if chunk then
+        self.receiveBuffer = self.receiveBuffer .. chunk
+    elseif partial and #partial > 0 then
+        self.receiveBuffer = self.receiveBuffer .. partial
     elseif err and err ~= "timeout" then
         self.lastError = "Receive error: " .. (err or "unknown")
         self.connected = false
         print("❌ Receive failed: " .. self.lastError)
         return nil
     end
-    
-    -- Если мы получили хотя бы 1 байт, читаем остальные байты заголовка
-    if data or partial then
-        local first_byte = data or partial
-        
-        -- Читаем второй байт заголовка
-        local second_byte, err = self.socket:receive(1)
-        if not second_byte then
-            print("❌ Failed to read second byte: " .. (err or "unknown"))
-            return nil
+
+    -- Пробуем разобрать WebSocket фрейм из буфера
+    return self:parseWebSocketFrame()
+end
+
+function NetworkManager:parseWebSocketFrame()
+    -- Нужно минимум 2 байта для заголовка
+    if #self.receiveBuffer < 2 then
+        return nil
+    end
+
+    local byte1 = self.receiveBuffer:byte(1)
+    local byte2 = self.receiveBuffer:byte(2)
+    local payload_len = bit.band(byte2, 0x7F)
+    local masked = bit.band(byte2, 0x80) ~= 0
+
+    local header_size = 2
+    local mask_size = masked and 4 or 0
+
+    -- Проверяем extended length
+    if payload_len == 126 then
+        if #self.receiveBuffer < 4 then
+            return nil -- Ждем больше данных
         end
-        
-        local byte1 = first_byte:byte(1)
-        local byte2 = second_byte:byte(1)
-        local payload_len = bit.band(byte2, 0x7F)
-        
-        print("📦 WebSocket frame - payload length: " .. payload_len)
-        
-        -- Читаем extended length если нужно
-        local extended_len_bytes = 0
-        if payload_len == 126 then
-            local extra, err = self.socket:receive(2)
-            if not extra then
-                print("❌ Failed to read extended length: " .. (err or "unknown"))
-                return nil
-            end
-            payload_len = bit.bor(bit.lshift(extra:byte(1), 8), extra:byte(2))
-            extended_len_bytes = 2
-            print("📦 Extended payload length: " .. payload_len)
-        elseif payload_len == 127 then
-            print("❌ 64-bit payload not supported")
-            return nil
-        end
-        
-        -- Читаем маску
-        local mask, err = self.socket:receive(4)
-        if not mask then
-            print("❌ Failed to read mask: " .. (err or "unknown"))
-            return nil
-        end
-        
-        -- Читаем данные
-        local payload, err = self.socket:receive(payload_len)
-        if not payload then
-            print("❌ Failed to read payload: " .. (err or "unknown"))
-            return nil
-        end
-        
-        -- Демаскируем данные
+        payload_len = bit.bor(bit.lshift(self.receiveBuffer:byte(3), 8), self.receiveBuffer:byte(4))
+        header_size = 4
+    elseif payload_len == 127 then
+        print("❌ 64-bit payload not supported")
+        self.receiveBuffer = "" -- Очищаем буфер
+        return nil
+    end
+
+    local total_size = header_size + mask_size + payload_len
+
+    -- Проверяем что весь фрейм в буфере
+    if #self.receiveBuffer < total_size then
+        return nil -- Ждем больше данных
+    end
+
+    -- Извлекаем маску
+    local mask = nil
+    if masked then
+        mask = self.receiveBuffer:sub(header_size + 1, header_size + 4)
+    end
+
+    -- Извлекаем payload
+    local payload_start = header_size + mask_size + 1
+    local payload = self.receiveBuffer:sub(payload_start, payload_start + payload_len - 1)
+
+    -- Демаскируем если нужно
+    if masked and mask then
         local unmasked = ""
         for i = 1, #payload do
             local j = ((i-1) % 4) + 1
             unmasked = unmasked .. string.char(bit.bxor(payload:byte(i), mask:byte(j)))
         end
-        
-        print("🎯 RAW WebSocket message received (" .. #unmasked .. " bytes): " .. unmasked)
-        self:handleServerMessage(unmasked)
-        return unmasked
+        payload = unmasked
     end
-    
-    return nil
+
+    -- Удаляем обработанный фрейм из буфера
+    self.receiveBuffer = self.receiveBuffer:sub(total_size + 1)
+
+    print("🎯 WebSocket message received (" .. #payload .. " bytes)")
+    self:handleServerMessage(payload)
+    return payload
 end
 
 function NetworkManager:handleServerMessage(message)
-    print("📥 Processing server message: " .. tostring(message and message:sub(1, 200) or "nil"))
-    
+    print("📥 Processing server message (" .. #message .. " bytes)")
+    print("📥 Full message: " .. message)
+
     local success, data = pcall(json.decode, message)
     if success then
         print("✅ JSON parsed successfully")
         print("📋 Message type: " .. tostring(data.type))
         print("📋 Success flag: " .. tostring(data.success))
-        
-        if data.data and data.data.player_id then
-            print("🎯 Player ID in response: " .. data.data.player_id)
+
+        -- Выводим структуру data
+        if data.data then
+            print("📋 data.data type: " .. type(data.data))
+            if type(data.data) == "table" then
+                print("📋 data.data keys:")
+                for k, v in pairs(data.data) do
+                    print("  " .. k .. ": " .. type(v))
+                end
+            elseif type(data.data) == "string" then
+                print("📋 data.data string (first 200 chars): " .. data.data:sub(1, 200))
+            end
         end
-        
+
         if data.type == "login" then
             print("🔑 Handling login response...")
             self:handleLoginResponse(data)
@@ -231,18 +239,40 @@ function NetworkManager:handleLoginResponse(data)
     print("🔑 Login response received")
     print("📋 Data success: " .. tostring(data.success))
     print("📋 Server error: " .. tostring(data.error))
-    
+
     if data.success then
-        if data.data and data.data.player_id then
-            self.playerId = data.data.player_id
-            self.instanceId = data.data.player_id
-            print("✅ Server assigned UUID: " .. self.playerId)
-        else
-            print("❌ No player_id in response data")
-            if data.data then
-                print("📋 Data content:")
-                for k, v in pairs(data.data) do
-                    print("  " .. k .. ": " .. tostring(v))
+        -- Проверяем структуру data.data
+        print("📋 data.data type: " .. type(data.data))
+
+        if data.data then
+            -- Если data.data это строка, парсим её как JSON
+            local playerData = data.data
+            if type(data.data) == "string" then
+                local success, parsed = pcall(json.decode, data.data)
+                if success then
+                    playerData = parsed
+                    print("✅ Parsed nested JSON")
+                else
+                    print("❌ Failed to parse nested JSON: " .. tostring(parsed))
+                end
+            end
+
+            -- Ищем player_id в разных местах
+            if playerData.player_id then
+                self.playerId = playerData.player_id
+                self.instanceId = playerData.player_id
+                print("✅ Server assigned UUID: " .. self.playerId)
+            elseif playerData.player and playerData.player.id then
+                self.playerId = playerData.player.id
+                self.instanceId = playerData.player.id
+                print("✅ Server assigned UUID from player.id: " .. self.playerId)
+            else
+                print("❌ No player_id in response data")
+                if type(playerData) == "table" then
+                    print("📋 Data content:")
+                    for k, v in pairs(playerData) do
+                        print("  " .. k .. ": " .. tostring(v))
+                    end
                 end
             end
         end

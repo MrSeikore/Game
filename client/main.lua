@@ -62,128 +62,140 @@ end
 
 -- Функция для инициализации игры после успешного логина
 function initializeGame()
-    if gameInitialized then 
-        logger:log("Game already initialized")
-        return true 
+    if gameInitialized then
+        print("[INIT] Game already initialized")
+        return true
     end
-    
-    logger:log("Initializing game after login...")
-    
+
+    print("[INIT] Initializing game after login...")
+    print("[INIT] Logger type: " .. type(logger))
+
     -- Загрузка оригинального GameState
-    logger:log("Loading GameState...")
+    print("[INIT] Loading GameState...")
     local success, gs = pcall(require, "src/core/GameState")
     if success then
         GameState = gs
-        logger:log("✅ Original GameState loaded")
+        print("[INIT] ✅ Original GameState loaded")
     else
-        logger:log("❌ Original GameState not found: " .. tostring(gs))
+        print("[INIT] ❌ Original GameState not found: " .. tostring(gs))
         return false
     end
-    
+
     -- Загрузка Player
-    logger:log("Loading Player...")
+    print("[INIT] Loading Player...")
     local success, player = pcall(require, "src/entities/Player")
     if success then
         Player = player
-        logger:log("✅ Player class loaded")
+        print("[INIT] ✅ Player class loaded")
     else
-        logger:log("❌ Player class not found: " .. tostring(player))
+        print("[INIT] ❌ Player class not found: " .. tostring(player))
         return false
     end
-    
+
+    -- Загрузка базового класса Scene
+    print("[INIT] Loading Scene base class...")
+    local success, scene = pcall(require, "src/scenes/Scene")
+    if success then
+        Scene = scene
+        print("[INIT] ✅ Scene base class loaded")
+    else
+        print("[INIT] ❌ Scene base class not found: " .. tostring(scene))
+        return false
+    end
+
     -- Загрузка оригинальных сцен
-    logger:log("Loading game scenes...")
-    
+    print("[INIT] Loading game scenes...")
+
     -- Загрузка GameScene
-    logger:log("Loading GameScene...")
+    print("[INIT] Loading GameScene...")
     local success, gscene = pcall(require, "src/scenes/GameScene")
     if success then
         GameScene = gscene
-        logger:log("✅ Original GameScene loaded")
+        print("[INIT] ✅ Original GameScene loaded")
     else
-        logger:log("❌ Original GameScene not found: " .. tostring(gscene))
+        print("[INIT] ❌ Original GameScene not found: " .. tostring(gscene))
         return false
     end
-    
+
     -- Загрузка InventoryScene
-    logger:log("Loading InventoryScene...")
+    print("[INIT] Loading InventoryScene...")
     local success, iscene = pcall(require, "src/scenes/InventoryScene")
     if success then
         InventoryScene = iscene
-        logger:log("✅ Original InventoryScene loaded")
+        print("[INIT] ✅ Original InventoryScene loaded")
     else
-        logger:log("❌ Original InventoryScene not found: " .. tostring(iscene))
+        print("[INIT] ❌ Original InventoryScene not found: " .. tostring(iscene))
         -- Не блокируем игру если инвентарь не загрузился
     end
-    
+
     -- Загрузка StatsScene
-    logger:log("Loading StatsScene...")
+    print("[INIT] Loading StatsScene...")
     local success, sscene = pcall(require, "src/scenes/StatsScene")
     if success then
         StatsScene = sscene
-        logger:log("✅ Original StatsScene loaded")
+        print("[INIT] ✅ Original StatsScene loaded")
     else
-        logger:log("❌ Original StatsScene not found: " .. tostring(sscene))
+        print("[INIT] ❌ Original StatsScene not found: " .. tostring(sscene))
         -- Не блокируем игру если статистика не загрузилась
     end
-    
+
     -- Инициализация GameState
-    logger:log("Initializing GameState...")
+    print("[INIT] Initializing GameState...")
     if GameState.initialize then
         GameState:initialize()
-        logger:log("✅ GameState initialized")
+        print("[INIT] ✅ GameState initialized")
     else
-        logger:log("❌ GameState.initialize method not found")
+        print("[INIT] ❌ GameState.initialize method not found")
         return false
     end
-    
+
     -- Создание игрока
-    logger:log("Creating player...")
+    print("[INIT] Creating player...")
     if Player and Player.new then
         GameState.player = Player:new()
-        logger:log("✅ Player created")
+        print("[INIT] ✅ Player created")
     else
-        logger:log("❌ Cannot create player - Player.new not found")
+        print("[INIT] ❌ Cannot create player - Player.new not found")
         return false
     end
-    
+
     -- Создание сцен
-    logger:log("Creating scenes...")
+    print("[INIT] Creating scenes...")
     if GameScene and GameScene.new then
         GameState.scenes = GameState.scenes or {}
         GameState.scenes.game = GameScene:new()
-        logger:log("✅ GameScene created")
+        print("[INIT] ✅ GameScene created")
     else
-        logger:log("❌ Cannot create GameScene - GameScene.new not found")
+        print("[INIT] ❌ Cannot create GameScene - GameScene.new not found")
         return false
     end
-    
+
     if InventoryScene and InventoryScene.new then
         GameState.scenes.inventory = InventoryScene:new()
-        logger:log("✅ InventoryScene created")
+        print("[INIT] ✅ InventoryScene created")
     else
-        logger:log("⚠️ Cannot create InventoryScene")
+        print("[INIT] ⚠️ Cannot create InventoryScene")
     end
-    
+
     if StatsScene and StatsScene.new then
         GameState.scenes.stats = StatsScene:new()
-        logger:log("✅ StatsScene created")
+        print("[INIT] ✅ StatsScene created")
     else
-        logger:log("⚠️ Cannot create StatsScene")
+        print("[INIT] ⚠️ Cannot create StatsScene")
     end
-    
+
     -- Устанавливаем GameScene как текущую сцену
-    logger:log("Setting current scene...")
+    print("[INIT] Setting current scene...")
     GameState.currentScene = GameState.scenes.game
     if GameState.currentScene then
-        logger:log("✅ Game scene set as current")
+        print("[INIT] ✅ Game scene set as current")
     else
-        logger:log("❌ Failed to set current scene")
+        print("[INIT] ❌ Failed to set current scene")
         return false
     end
-    
+
     gameInitialized = true
-    logger:log("🎮 Game initialization completed successfully!")
+    print("[INIT] 🎮 Game initialization completed successfully!")
     return true
 end
 
